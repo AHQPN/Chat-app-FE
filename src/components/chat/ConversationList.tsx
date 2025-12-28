@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { cn, getInitials, generateAvatarColor } from '@/lib/utils';
+import { cn, getInitials, generateAvatarColor, getAvatarUrl } from '@/lib/utils';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,7 +10,7 @@ import {
     UserPlus
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import type { Conversation } from '@/types';
+import type { Conversation, User } from '@/types';
 
 interface ConversationListProps {
     conversations: Conversation[];
@@ -20,6 +20,7 @@ interface ConversationListProps {
     isLoading: boolean;
     onCreateChannel?: () => void;
     onCreateDM?: () => void;
+    currentUser: User | null;
 }
 
 export function ConversationList({
@@ -30,18 +31,31 @@ export function ConversationList({
     isLoading,
     onCreateChannel,
     onCreateDM,
+    currentUser,
 }: ConversationListProps) {
     const [searchQuery, setSearchQuery] = useState('');
+    // Split Channels into Joined and Suggested (not joined)
     const channels = conversations.filter((c) => c.type === 'CHANNEL');
+    const joinedChannels = channels.filter(c => c.isJoined !== false);
+    const suggestedChannels = channels.filter(c => c.isJoined === false);
+
     const directMessages = conversations.filter((c) => c.type === 'DM');
 
     // Filter conversations by search query
-    const filteredChannels = channels.filter((c) =>
+    const filteredJoinedChannels = joinedChannels.filter((c) =>
         c.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
-    const filteredDMs = directMessages.filter((c) =>
+    const filteredSuggestedChannels = suggestedChannels.filter((c) =>
         c.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
+    const filteredDMs = directMessages.filter((c) => {
+        // Search by other user name for DMs if possible
+        if (currentUser && c.members) {
+            const other = c.members.find(m => m.userId !== currentUser.id);
+            if (other) return other.fullName.toLowerCase().includes(searchQuery.toLowerCase());
+        }
+        return c.name.toLowerCase().includes(searchQuery.toLowerCase());
+    });
 
     return (
         <div className="w-64 min-w-64 h-full bg-slate-900/70 flex flex-col border-r border-white/5">
@@ -85,12 +99,12 @@ export function ConversationList({
                     </div>
                 ) : (
                     <div className="px-2 pb-4">
-                        {/* Channels Section */}
+                        {/* Joined Channels Section */}
                         <div className="mb-4">
                             <div className="flex items-center justify-between px-2 mb-1">
                                 <div className="flex items-center gap-1 text-white/50 text-xs font-semibold uppercase tracking-wider">
                                     <ChevronDown className="w-3 h-3" />
-                                    <span>Channels ({filteredChannels.length})</span>
+                                    <span>Channels ({filteredJoinedChannels.length})</span>
                                 </div>
                                 <TooltipProvider>
                                     <Tooltip>
@@ -108,19 +122,42 @@ export function ConversationList({
                                     </Tooltip>
                                 </TooltipProvider>
                             </div>
-                            {filteredChannels.length === 0 ? (
+                            {filteredJoinedChannels.length === 0 ? (
                                 <p className="text-white/30 text-xs px-2 py-2">Không có channel nào</p>
                             ) : (
-                                filteredChannels.map((conversation) => (
+                                filteredJoinedChannels.map((conversation) => (
                                     <ConversationItem
                                         key={conversation.id}
                                         conversation={conversation}
                                         isSelected={selectedConversation?.id === conversation.id}
                                         onClick={() => onSelectConversation(conversation)}
+                                        currentUser={currentUser}
                                     />
                                 ))
                             )}
                         </div>
+
+                        {/* Suggested/Public Channels Section (Not Joined) */}
+                        {filteredSuggestedChannels.length > 0 && (
+                            <div className="mb-4">
+                                <div className="flex items-center justify-between px-2 mb-1">
+                                    <div className="flex items-center gap-1 text-white/50 text-xs font-semibold uppercase tracking-wider">
+                                        <ChevronDown className="w-3 h-3" />
+                                        <span>Gợi ý ({filteredSuggestedChannels.length})</span>
+                                    </div>
+                                </div>
+                                {filteredSuggestedChannels.map((conversation) => (
+                                    <ConversationItem
+                                        key={conversation.id}
+                                        conversation={conversation}
+                                        isSelected={selectedConversation?.id === conversation.id}
+                                        onClick={() => onSelectConversation(conversation)}
+                                        currentUser={currentUser}
+                                        isSuggested
+                                    />
+                                ))}
+                            </div>
+                        )}
 
                         {/* Direct Messages Section */}
                         <div>
@@ -154,6 +191,7 @@ export function ConversationList({
                                         conversation={conversation}
                                         isSelected={selectedConversation?.id === conversation.id}
                                         onClick={() => onSelectConversation(conversation)}
+                                        currentUser={currentUser}
                                     />
                                 ))
                             )}
@@ -186,13 +224,30 @@ function ConversationItem({
     conversation,
     isSelected,
     onClick,
+    currentUser,
+    isSuggested = false,
 }: {
     conversation: Conversation;
     isSelected: boolean;
     onClick: () => void;
+    currentUser: User | null;
+    isSuggested?: boolean;
 }) {
     const isChannel = conversation.type === 'CHANNEL';
     const isPrivate = conversation.isPrivate;
+    const hasUnread = (conversation.unseenCount || 0) > 0;
+
+    // Resolve display name and avatar
+    let displayName = conversation.name;
+    let displayAvatar = conversation.members?.[0]?.avatar;
+
+    if (!isChannel && currentUser && conversation.members) {
+        const otherMember = conversation.members.find(m => m.userId !== currentUser.id);
+        if (otherMember) {
+            displayName = otherMember.fullName;
+            displayAvatar = otherMember.avatar;
+        }
+    }
 
     return (
         <button
@@ -201,7 +256,9 @@ function ConversationItem({
                 'w-full flex items-center gap-2 px-2 py-1.5 rounded-md transition-all duration-150 group',
                 isSelected
                     ? 'bg-purple-500/20 text-white'
-                    : 'text-white/60 hover:text-white/90 hover:bg-white/5'
+                    : 'text-white/60 hover:text-white/90 hover:bg-white/5',
+                isSuggested && 'opacity-70',
+                hasUnread && !isSelected && 'text-white' // Make text white when has unread
             )}
         >
             {isChannel ? (
@@ -214,13 +271,25 @@ function ConversationItem({
                 </div>
             ) : (
                 <Avatar className="w-7 h-7 flex-shrink-0">
-                    <AvatarImage src={conversation.members?.[0]?.avatar} />
-                    <AvatarFallback className={cn('text-xs text-white', generateAvatarColor(conversation.name))}>
-                        {getInitials(conversation.name)}
+                    <AvatarImage src={getAvatarUrl(displayAvatar)} />
+                    <AvatarFallback className={cn('text-xs text-white', generateAvatarColor(displayName))}>
+                        {getInitials(displayName)}
                     </AvatarFallback>
                 </Avatar>
             )}
-            <span className="flex-1 truncate text-sm text-left">{conversation.name}</span>
+            <span className={cn(
+                'flex-1 truncate text-sm text-left',
+                hasUnread && 'font-semibold' // Bold text when has unread
+            )}>
+                {displayName}
+            </span>
+
+            {/* Unseen Count Badge */}
+            {hasUnread && (
+                <span className="flex-shrink-0 min-w-[18px] h-[18px] px-1 rounded-full bg-purple-500 text-white text-xs font-bold flex items-center justify-center">
+                    {conversation.unseenCount! > 99 ? '99+' : conversation.unseenCount}
+                </span>
+            )}
         </button>
     );
 }

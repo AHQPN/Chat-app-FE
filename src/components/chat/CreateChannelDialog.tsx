@@ -13,7 +13,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Hash, Lock, Loader2, X, Check, ChevronLeft, ChevronRight, Search, Users } from 'lucide-react';
-import { cn, getInitials, generateAvatarColor } from '@/lib/utils';
+import { cn, getInitials, generateAvatarColor, getAvatarUrl } from '@/lib/utils';
 import { userService, type UserItem } from '@/services/userService';
 
 interface CreateChannelDialogProps {
@@ -225,7 +225,7 @@ export function CreateChannelDialog({
                                         className="flex items-center gap-2 px-2 py-1 bg-purple-500/20 rounded-full"
                                     >
                                         <Avatar className="w-5 h-5">
-                                            <AvatarImage src={user.avatar || undefined} />
+                                            <AvatarImage src={getAvatarUrl(user.avatar)} />
                                             <AvatarFallback className={cn('text-[10px] text-white', generateAvatarColor(user.fullName))}>
                                                 {getInitials(user.fullName)}
                                             </AvatarFallback>
@@ -257,7 +257,7 @@ export function CreateChannelDialog({
                             />
                         </div>
 
-                        <ScrollArea className="flex-1 max-h-[200px] border border-white/10 rounded-lg">
+                        <ScrollArea className="h-[200px] border border-white/10 rounded-lg">
                             {isLoadingUsers ? (
                                 <div className="flex items-center justify-center py-6">
                                     <Loader2 className="w-5 h-5 text-white/40 animate-spin" />
@@ -267,7 +267,7 @@ export function CreateChannelDialog({
                                     Không tìm thấy thành viên
                                 </div>
                             ) : (
-                                <div className="p-1">
+                                <div className="p-1 pr-3">
                                     {filteredUsers.map((user) => {
                                         const isSelected = selectedUsers.some((u) => u.userId === user.userId);
                                         return (
@@ -283,7 +283,7 @@ export function CreateChannelDialog({
                                                 )}
                                             >
                                                 <Avatar className="w-8 h-8">
-                                                    <AvatarImage src={user.avatar || undefined} />
+                                                    <AvatarImage src={getAvatarUrl(user.avatar)} />
                                                     <AvatarFallback className={cn('text-xs text-white', generateAvatarColor(user.fullName))}>
                                                         {getInitials(user.fullName)}
                                                     </AvatarFallback>

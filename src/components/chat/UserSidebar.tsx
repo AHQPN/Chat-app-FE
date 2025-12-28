@@ -1,4 +1,4 @@
-import { cn, getInitials, generateAvatarColor } from '@/lib/utils';
+import { cn, getInitials, generateAvatarColor, getAvatarUrl } from '@/lib/utils';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -68,7 +68,7 @@ export function UserSidebar({ user, onLogout }: UserSidebarProps) {
                         <TooltipTrigger asChild>
                             <button className="relative group">
                                 <Avatar className="w-12 h-12 ring-2 ring-transparent group-hover:ring-purple-500/50 transition-all duration-200">
-                                    <AvatarImage src={user?.avatar} />
+                                    <AvatarImage src={getAvatarUrl(user?.avatar)} />
                                     <AvatarFallback className={cn('text-white font-semibold', generateAvatarColor(user?.fullName || 'U'))}>
                                         {getInitials(user?.fullName || 'User')}
                                     </AvatarFallback>

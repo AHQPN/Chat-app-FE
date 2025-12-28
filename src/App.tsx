@@ -7,6 +7,7 @@ import { ProtectedRoute, PublicRoute } from '@/components/ProtectedRoute';
 import LoginPage from '@/pages/LoginPage';
 import SignupPage from '@/pages/SignupPage';
 import ChatPage from '@/pages/ChatPage';
+import AuthCallbackPage from '@/pages/AuthCallbackPage';
 
 function App() {
   return (
@@ -40,6 +41,9 @@ function App() {
               </ProtectedRoute>
             }
           />
+
+          {/* OAuth Callback - No protection needed */}
+          <Route path="/auth/callback" element={<AuthCallbackPage />} />
 
           {/* Catch all */}
           <Route path="/" element={<Navigate to="/chat" replace />} />

@@ -11,7 +11,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Search, Loader2, MessageCircle, ChevronLeft, ChevronRight } from 'lucide-react';
-import { cn, getInitials, generateAvatarColor } from '@/lib/utils';
+import { cn, getInitials, generateAvatarColor, getAvatarUrl } from '@/lib/utils';
 import { userService, type UserItem } from '@/services/userService';
 
 interface CreateDMDialogProps {
@@ -150,7 +150,7 @@ export function CreateDMDialog({
                                         )}
                                     >
                                         <Avatar className="w-10 h-10">
-                                            <AvatarImage src={user.avatar || undefined} />
+                                            <AvatarImage src={getAvatarUrl(user.avatar)} />
                                             <AvatarFallback className={cn('text-white font-medium', generateAvatarColor(user.fullName))}>
                                                 {getInitials(user.fullName)}
                                             </AvatarFallback>

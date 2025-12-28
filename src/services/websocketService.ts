@@ -1,9 +1,18 @@
-import { Client, type IMessage } from '@stomp/stompjs';
+import { Client, type IMessage, type StompSubscription } from '@stomp/stompjs';
 // import SockJS from 'sockjs-client'; // Disable SockJS to test Native WS
+
+interface ListenerInfo {
+    callback: (message: any) => void;
+}
+
+interface SubscriptionInfo {
+    listeners: Map<string, ListenerInfo>; // listenerId -> callback
+    stompSubscription?: StompSubscription;
+}
 
 class WebSocketService {
     private client: Client;
-    private subscriptions: Map<string, any> = new Map();
+    private subscriptions: Map<string, SubscriptionInfo> = new Map();
 
     constructor() {
         this.client = new Client({
@@ -14,6 +23,12 @@ class WebSocketService {
             heartbeatIncoming: 4000,
             heartbeatOutgoing: 4000,
         });
+    }
+
+    private userNotificationCallback?: (packet: any) => void;
+
+    setUserNotificationCallback(callback: (packet: any) => void) {
+        this.userNotificationCallback = callback;
     }
 
     connect(token: string) {
@@ -32,12 +47,32 @@ class WebSocketService {
 
         this.client.onConnect = () => {
             console.log('Connected to WebSocket');
-            // Resubscribe to all active topics
-            this.subscriptions.forEach((callback, topic) => {
-                this.client.subscribe(topic, (message: IMessage) => {
+
+            // 1. Always subscribe to User Notification Queue
+            this.client.subscribe('/user/queue/notifications', (message: IMessage) => {
+                console.log(`%c[WS-INCOMING] USER NOTIF`, 'color: #ff00ff; font-weight: bold;', message.body);
+                if (this.userNotificationCallback) {
+                    try {
+                        this.userNotificationCallback(JSON.parse(message.body));
+                    } catch (e) {
+                        console.error('Error parsing notification:', e);
+                    }
+                }
+            });
+
+            // 2. Resubscribe to all active topics (Chat rooms, etc.)
+            this.subscriptions.forEach((info, topic) => {
+                const stompSub = this.client.subscribe(topic, (message: IMessage) => {
+                    // Log incoming message for debugging
+                    console.log(`%c[WS-INCOMING] Topic: ${topic}`, 'color: #00ff00; font-weight: bold;', message.body);
+
                     const body = JSON.parse(message.body);
-                    callback(body);
+                    // Call ALL listeners for this topic
+                    info.listeners.forEach((listener) => {
+                        listener.callback(body);
+                    });
                 });
+                info.stompSubscription = stompSub;
             });
         };
 
@@ -54,28 +89,66 @@ class WebSocketService {
         this.subscriptions.clear();
     }
 
-    subscribe(topic: string, callback: (message: any) => void) {
-        // Store the callback
-        this.subscriptions.set(topic, callback);
+    /**
+     * Subscribe to a topic with a unique listener ID.
+     * Multiple listeners can subscribe to the same topic.
+     * @param topic - The STOMP topic to subscribe to
+     * @param listenerId - Unique ID for this listener (e.g., 'chatpage', 'messageview')
+     * @param callback - Callback function when message is received
+     */
+    subscribe(topic: string, listenerId: string, callback: (message: any) => void): void {
+        let info = this.subscriptions.get(topic);
 
-        // If already connected, subscribe immediately
-        if (this.client.connected) {
-            const sub = this.client.subscribe(topic, (message: IMessage) => {
-                const body = JSON.parse(message.body);
-                callback(body);
-            });
-            return sub;
+        if (!info) {
+            // First subscription to this topic
+            info = { listeners: new Map() };
+            this.subscriptions.set(topic, info);
+
+            // Subscribe to STOMP if connected
+            if (this.client.connected) {
+                const stompSub = this.client.subscribe(topic, (message: IMessage) => {
+                    // Log incoming message for debugging
+                    console.log(`%c[WS-INCOMING] Topic: ${topic}`, 'color: #00ff00; font-weight: bold;', message.body);
+
+                    const body = JSON.parse(message.body);
+                    // Call ALL listeners for this topic
+                    info!.listeners.forEach((listener) => {
+                        listener.callback(body);
+                    });
+                });
+                info.stompSubscription = stompSub;
+            }
+        }
+
+        // Add or update listener
+        console.log(`[WS] Subscribe: topic=${topic}, listenerId=${listenerId}`);
+        info.listeners.set(listenerId, { callback });
+    }
+
+    /**
+     * Unsubscribe a specific listener from a topic.
+     * Only unsubscribes from STOMP when no listeners remain.
+     * @param topic - The STOMP topic
+     * @param listenerId - The listener ID to remove
+     */
+    unsubscribe(topic: string, listenerId: string) {
+        const info = this.subscriptions.get(topic);
+        if (!info) return;
+
+        console.log(`[WS] Unsubscribe: topic=${topic}, listenerId=${listenerId}`);
+        info.listeners.delete(listenerId);
+
+        // If no more listeners, unsubscribe from STOMP
+        if (info.listeners.size === 0) {
+            if (info.stompSubscription) {
+                console.log('[WS] No more listeners, unsubscribing from STOMP:', topic);
+                info.stompSubscription.unsubscribe();
+            }
+            this.subscriptions.delete(topic);
         }
     }
 
-    unsubscribe(topic: string) {
-        this.subscriptions.delete(topic);
-        // Note: Actual unsubscribe from STOMP is tricky if we don't store the StompSubscription object mapped to topic.
-        // For simple usage where we resubscribe on reconnect, just removing from map prevents future callbacks.
-        // Ideally we should keep track of StompSubscription objects.
-    }
-
-    sendMessage(conversationId: number, content: string, memberIds: number[] = []) {
+    sendMessage(conversationId: number, content: string, memberIds: number[] = [], parentMessageId?: number, urls: number[] = [], threadId?: number) {
         if (!this.client.connected) {
             console.error('WebSocket is not connected');
             return;
@@ -86,7 +159,9 @@ class WebSocketService {
             body: JSON.stringify({
                 content,
                 memberIds,
-                urls: [], // Attachments logic to be added
+                urls,
+                parentMessageId,
+                threadId
             }),
         });
     }
@@ -94,16 +169,41 @@ class WebSocketService {
     reaction(messageId: number, emoji: string) {
         if (!this.client.connected) return;
         this.client.publish({
-            destination: `/app/msg/react/${messageId}`,
-            body: JSON.stringify({ emoji }),
+            destination: '/app/msg/react',
+            body: JSON.stringify({ messageId, emoji }),
         });
     }
 
-    unreaction(messageId: number, emoji: string) {
+    // Unreact - removes current user's reaction from message
+    unreaction(messageId: number) {
         if (!this.client.connected) return;
         this.client.publish({
-            destination: `/app/msg/unreact/${messageId}`,
-            body: JSON.stringify({ emoji }),
+            destination: '/app/msg/unreact',
+            body: JSON.stringify({ messageId }),
+        });
+    }
+
+    pinMessage(messageId: number) {
+        if (!this.client.connected) return;
+        this.client.publish({
+            destination: '/app/msg/pin',
+            body: JSON.stringify({ messageId }),
+        });
+    }
+
+    unpinMessage(messageId: number) {
+        if (!this.client.connected) return;
+        this.client.publish({
+            destination: '/app/msg/unpin',
+            body: JSON.stringify({ messageId }),
+        });
+    }
+
+    sendTyping(conversationId: number, isTyping: boolean) {
+        if (!this.client.connected) return;
+        this.client.publish({
+            destination: '/app/conversation/typing',
+            body: JSON.stringify({ conversationId, isTyping }),
         });
     }
 }

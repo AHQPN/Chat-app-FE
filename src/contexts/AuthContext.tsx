@@ -15,6 +15,19 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+function parseJwt(token: string) {
+    try {
+        const base64Url = token.split('.')[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const jsonPayload = decodeURIComponent(window.atob(base64).split('').map(function (c) {
+            return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+        }).join(''));
+        return JSON.parse(jsonPayload);
+    } catch (e) {
+        return null;
+    }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
     const [isLoading, setIsLoading] = useState(true);
@@ -26,7 +39,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         if (storedUser && accessToken) {
             try {
-                setUser(JSON.parse(storedUser));
+                let userData = JSON.parse(storedUser);
+
+                // Try to refresh user info from token if available
+                const claims = parseJwt(accessToken);
+                if (claims && (claims.fullName || claims.name || claims.avatar)) {
+                    userData = {
+                        ...userData,
+                        fullName: claims.fullName || claims.name || userData.fullName,
+                        avatar: claims.avatar || userData.avatar
+                    };
+                    // Update storage with fresh data
+                    localStorage.setItem('user', JSON.stringify(userData));
+                }
+
+                setUser(userData);
             } catch {
                 localStorage.removeItem('user');
                 localStorage.removeItem('accessToken');
@@ -46,10 +73,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 localStorage.setItem('accessToken', accessToken);
                 localStorage.setItem('refreshToken', refreshToken);
 
+                // Parse token to get user info (fullName, avatar)
+                const claims = parseJwt(accessToken);
+                const fullName = claims?.fullName || claims?.name || data.identifier;
+                const avatar = claims?.avatar || null;
+
                 // Create user object
                 const userData: User = {
                     id: userId,
-                    fullName: data.identifier,
+                    fullName: fullName,
+                    avatar: avatar,
                     role: role as UserRole,
                 };
 

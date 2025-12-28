@@ -60,17 +60,26 @@ export interface Conversation {
     name: string;
     type: ConversationType;
     isPrivate: boolean;
+    isJoined: boolean; // New field
+    totalMembers?: number; // New field
     createdAt?: string;
-    // Các fields bổ sung (có thể dùng sau)
+    // Các fields từ GET /conversations/{id}
     members?: ConversationMember[];
+    // Fields for unread tracking and sidebar preview
+    unseenCount?: number; // Number of unseen messages from API
+    lastMessage?: string; // Latest message content (for sidebar preview)
+    lastMessageAt?: number; // Timestamp of latest message
 }
 
 export interface ConversationMember {
     id: number;
     userId: number;
+    conversationMemberId?: number; // ID used for setMemberRole API
     fullName: string;
     avatar?: string;
     role: ConversationRole;
+    isOnline?: boolean;
+    lastActive?: number;
 }
 
 export interface CreateConversationRequest {
@@ -82,9 +91,12 @@ export interface CreateConversationRequest {
 }
 
 // Message Types
+export type MessageStatus = 'SENT' | 'REVOKED' | 'DELETED';
+
 export interface Message {
     id: number;
     content: string;
+    status?: MessageStatus;
     isDeleted: boolean;
     createdAt: number;
     updatedAt: number;
@@ -98,16 +110,27 @@ export interface Message {
     mentions?: Mention[];
     isPinned?: boolean;
     attachments?: Attachment[];
+    threadId?: number;
+    threadReplyCount?: number;
+}
+
+export interface SendMessageRequest {
+    content: string;
+    urls?: number[]; // list of attachment IDs
+    memberIds?: number[]; // list of mentioned user IDs
+    parentMessageId?: number; // for Quote
+    threadId?: number; // for Thread Reply
 }
 
 export interface Reaction {
     userId: number;
     userName: string;
-    emoji: string;
+    emoji: string; // Unicode emoji or filename (without .png)
     reactedAt: number;
 }
 
 export interface Mention {
+    memberId: number; // ConversationMember ID
     userId: number;
     userName: string;
 }
@@ -123,6 +146,7 @@ export interface SendMessageRequest {
     content: string;
     urls?: number[];
     memberIds?: number[];
+    parentMessageId?: number;
 }
 
 // Paginated Response

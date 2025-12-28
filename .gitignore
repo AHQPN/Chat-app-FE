@@ -23,5 +23,5 @@ dist-ssr
 *.sln
 *.sw?
 
-API_DOCUMENTATION.md
+
 IMPLEMENTATION_GUIDE.md
