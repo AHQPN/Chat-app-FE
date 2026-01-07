@@ -110,9 +110,32 @@ export default function ChatPage() {
 
     // Handle messages from ANY conversation (for sidebar updates)
     const handleGlobalMessage = (conversationId: number, packet: any) => {
-        // Skip non-message events for sidebar updates
+        // Skip non-critical events for sidebar updates
         if (packet.type === 'TYPING' || packet.type === 'USER_STATUS') return;
         if (packet.type?.startsWith('REACTION_')) return;
+
+        // Handle MEMBER_REMOVED - if current user is removed from a conversation
+        if (packet.type === 'MEMBER_REMOVED') {
+            const currentUserId = userRef.current?.id;
+            if (packet.userId === currentUserId) {
+                console.log('[ChatPage] Current user was removed from conversation:', conversationId);
+
+                // Remove conversation from sidebar
+                setConversations(prev => prev.filter(conv => conv.id !== conversationId));
+
+                // If currently viewing this conversation, deselect it
+                if (selectedConversationRef.current?.id === conversationId) {
+                    setSelectedConversation(null);
+                    // Could also show a toast/notification here
+                }
+
+                // Unsubscribe from this conversation's topic
+                webSocketService.unsubscribe(`/topic/conversation/${conversationId}`, 'chatpage');
+                webSocketService.unsubscribe(`/topic/conversation/${conversationId}`, 'messageview');
+                subscribedIdsRef.current.delete(conversationId);
+            }
+            return;
+        }
 
         // Check if this is a new message (has id and content)
         if (packet.id && packet.content !== undefined) {

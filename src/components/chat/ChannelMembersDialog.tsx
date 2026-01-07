@@ -25,7 +25,7 @@ interface ChannelMembersDialogProps {
     members: ConversationMember[];
     currentUserId?: number;
     isAdmin: boolean;
-    onMembersChange: () => void; // Callback to refresh conversation detail
+    // onMembersChange removed - WebSocket events now handle member updates
 }
 
 export function ChannelMembersDialog({
@@ -36,7 +36,6 @@ export function ChannelMembersDialog({
     members,
     currentUserId,
     isAdmin,
-    onMembersChange,
 }: ChannelMembersDialogProps) {
     const [isAddingMode, setIsAddingMode] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
@@ -89,7 +88,7 @@ export function ChannelMembersDialog({
         try {
             const response = await conversationService.addMembers(conversationId, [userId]);
             if (response.code === 1000) {
-                onMembersChange();
+                // WebSocket will handle UI update via MEMBER_ADDED event
                 setSearchQuery('');
                 setSearchResults([]);
             } else {
@@ -114,7 +113,7 @@ export function ChannelMembersDialog({
         try {
             const response = await conversationService.removeMembers(conversationId, [userId]);
             if (response.code === 1000) {
-                onMembersChange();
+                // WebSocket will handle UI update via MEMBER_REMOVED event
             } else {
                 setError(response.message || 'Không thể xóa thành viên');
             }
@@ -139,7 +138,7 @@ export function ChannelMembersDialog({
         setError(null);
         try {
             await conversationService.setMemberRole(conversationId, memberId, newRole);
-            onMembersChange();
+            // WebSocket will handle UI update via MEMBER_ROLE_UPDATED event
         } catch (err: unknown) {
             const errorMessage = err instanceof Error ? err.message : 'Có lỗi xảy ra';
             setError(errorMessage);

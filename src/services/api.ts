@@ -47,6 +47,7 @@ api.interceptors.response.use(
                 return api(originalRequest);
             } catch (refreshError) {
                 // Refresh failed, clear tokens and redirect to login
+                console.error("Token refresh failed:", refreshError);
                 localStorage.removeItem('accessToken');
                 localStorage.removeItem('refreshToken');
                 localStorage.removeItem('user');

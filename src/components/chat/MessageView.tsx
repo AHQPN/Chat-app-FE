@@ -165,9 +165,12 @@ export function MessageView({ conversation, currentUserId }: MessageViewProps) {
                     // Mark last message as read
                     if (loadedMessages.length > 0) {
                         const lastMessageId = loadedMessages[loadedMessages.length - 1].id;
-                        conversationService.setReadMessage(conversation.id, lastMessageId).catch(err => {
-                            console.error('Failed to mark messages as read:', err);
-                        });
+                        console.log(`[MessageView] Marking conversation ${conversation.id} read up to message ${lastMessageId}`);
+                        conversationService.setReadMessage(conversation.id, lastMessageId)
+                            .then(res => console.log(`[MessageView] Mark read success:`, res))
+                            .catch(err => {
+                                console.error('Failed to mark messages as read:', err);
+                            });
                     }
                 }
             } catch (error) {
@@ -273,6 +276,76 @@ export function MessageView({ conversation, currentUserId }: MessageViewProps) {
                 // console.log(...)
                 // console.log(...)
 
+                // Handle Member Events
+                if (packet.type === 'MEMBER_ADDED') {
+                    console.log('[MessageView] MEMBER_ADDED event received:', packet);
+                    setConversationDetail(prev => {
+                        console.log('[MessageView] MEMBER_ADDED - prev state:', prev);
+                        if (!prev || !prev.members) {
+                            console.log('[MessageView] MEMBER_ADDED - prev is null or has no members, returning prev');
+                            return prev;
+                        }
+                        // Avoid duplicates
+                        if (prev.members.some(m => m.userId === packet.userId)) {
+                            console.log('[MessageView] MEMBER_ADDED - member already exists, skipping');
+                            return prev;
+                        }
+
+                        const cachedStatus = getUserStatusFromCache(packet.userId);
+
+                        const newState = {
+                            ...prev,
+                            members: [...prev.members, {
+                                id: packet.memberId, // Required field
+                                conversationMemberId: packet.memberId,
+                                userId: packet.userId,
+                                fullName: packet.fullName,
+                                avatar: packet.avatar,
+                                role: packet.role,
+                                isOnline: cachedStatus?.isOnline ?? false,
+                                lastActive: cachedStatus?.lastActive
+                            }]
+                        };
+                        console.log('[MessageView] MEMBER_ADDED - new state:', newState);
+                        return newState;
+                    });
+                    return;
+                }
+
+                if (packet.type === 'MEMBER_REMOVED') {
+                    console.log('[MessageView] MEMBER_REMOVED event received:', packet);
+                    setConversationDetail(prev => {
+                        console.log('[MessageView] MEMBER_REMOVED - prev state:', prev);
+                        if (!prev || !prev.members) {
+                            console.log('[MessageView] MEMBER_REMOVED - prev is null or has no members');
+                            return prev;
+                        }
+                        const newState = {
+                            ...prev,
+                            members: prev.members.filter(m => m.userId !== packet.userId)
+                        };
+                        console.log('[MessageView] MEMBER_REMOVED - new state:', newState);
+                        return newState;
+                    });
+                    return;
+                }
+
+                if (packet.type === 'MEMBER_ROLE_UPDATED') {
+                    console.log('[MessageView] MEMBER_ROLE_UPDATED event received:', packet);
+                    setConversationDetail(prev => {
+                        if (!prev || !prev.members) return prev;
+                        return {
+                            ...prev,
+                            members: prev.members.map(m =>
+                                m.userId === packet.userId
+                                    ? { ...m, role: packet.role }
+                                    : m
+                            )
+                        };
+                    });
+                    return;
+                }
+
                 // Handle User Status
                 if (packet.type === 'USER_STATUS') {
                     const isOnline = packet.status === 'ONLINE';
@@ -325,7 +398,7 @@ export function MessageView({ conversation, currentUserId }: MessageViewProps) {
 
                 // Handle Reaction Events
                 if (packet.type === 'REACTION_ADDED' || packet.type === 'REACTION_UPDATED' || packet.type === 'REACTION_REMOVED') {
-                    setMessageUpdate(packet); // Notify ThreadView for replies
+                    setMessageUpdate(packet as Message); // Notify ThreadView for replies
 
                     // Update main messages list
                     setMessages((prevMessages) => {
@@ -563,14 +636,19 @@ export function MessageView({ conversation, currentUserId }: MessageViewProps) {
 
     // Jump to a specific message using getMessageContext API
     const handleJumpToMessage = async (messageId: number) => {
+        // Helper function to scroll and highlight an element
+        const scrollAndHighlight = (element: HTMLElement) => {
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            element.classList.add('bg-purple-500/20');
+            setTimeout(() => element?.classList.remove('bg-purple-500/20'), 2000);
+        };
+
         // First, check if message is already loaded
         let element = document.getElementById(`message-${messageId}`);
 
         if (element) {
             // Message is loaded, scroll to it
-            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            element.classList.add('bg-purple-500/20');
-            setTimeout(() => element?.classList.remove('bg-purple-500/20'), 2000);
+            scrollAndHighlight(element);
             return;
         }
 
@@ -582,22 +660,32 @@ export function MessageView({ conversation, currentUserId }: MessageViewProps) {
             const response = await messageService.getMessageContext(messageId, 20);
             if (response.code === 1000 && response.data) {
                 const pageData = response.data;
-                const pageNumber = pageData.number; // Page containing the target message
+                const pageNumber = pageData.pageable?.pageNumber ?? pageData.number ?? 0;
 
-                // Replace messages with the new context
+                // Replace messages with the new context (reverse for chronological order)
                 setMessages(pageData.content.reverse());
                 setTotalPages(pageData.totalPages);
                 setMinLoadedPage(pageNumber);
                 setMaxLoadedPage(pageNumber);
 
-                // Wait for React to render, then scroll to the message
-                await new Promise(resolve => setTimeout(resolve, 100));
-                element = document.getElementById(`message-${messageId}`);
-                if (element) {
-                    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    element.classList.add('bg-purple-500/20');
-                    setTimeout(() => element?.classList.remove('bg-purple-500/20'), 2000);
-                }
+                // Wait for React to render with retry mechanism
+                const maxRetries = 10;
+                let retryCount = 0;
+
+                const tryScrollToMessage = () => {
+                    element = document.getElementById(`message-${messageId}`);
+                    if (element) {
+                        scrollAndHighlight(element);
+                    } else if (retryCount < maxRetries) {
+                        retryCount++;
+                        setTimeout(tryScrollToMessage, 100);
+                    } else {
+                        console.warn(`Could not find element for message ${messageId} after ${maxRetries} retries`);
+                    }
+                };
+
+                // Start retry loop after initial short delay
+                setTimeout(tryScrollToMessage, 50);
             }
         } catch (error) {
             console.error('Failed to get message context:', error);
@@ -838,18 +926,7 @@ export function MessageView({ conversation, currentUserId }: MessageViewProps) {
         return currentMember?.role === 'ADMIN';
     }, [isChannel, conversationDetail, currentUserId]);
 
-    // Handler to refresh conversation detail after member changes
-    const handleMembersChange = async () => {
-        if (!conversation) return;
-        try {
-            const response = await conversationService.getConversationDetail(conversation.id);
-            if (response.code === 1000 && response.data) {
-                setConversationDetail(response.data);
-            }
-        } catch (error) {
-            console.error('Failed to refresh conversation detail:', error);
-        }
-    };
+    // handleMembersChange removed - WebSocket events now handle member updates in real-time
 
     if (!conversation) {
         return (
@@ -1344,7 +1421,6 @@ export function MessageView({ conversation, currentUserId }: MessageViewProps) {
                         members={conversationDetail.members || []}
                         currentUserId={currentUserId}
                         isAdmin={isChannelAdmin}
-                        onMembersChange={handleMembersChange}
                     />
                 )
             }

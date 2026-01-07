@@ -111,7 +111,7 @@ Tất cả các API đều trả về response theo format chuẩn:
 ```
 
 **Cookies Set**:
-- `refreshToken`: HTTP-only cookie, path `/auth/refreshtoken`, max-age 7 days
+- `refreshToken`: HTTP-only cookie, path `/`, max-age 7 days
 
 ---
 
@@ -634,7 +634,22 @@ Conversation updated successfully
 }
 ```
 
-**Lưu ý**: Thành viên mới được thêm sẽ có role `MEMBER` mặc định.
+**Lưu ý**: 
+- Thành viên mới được thêm sẽ có role `MEMBER` mặc định.
+- Thành viên được thêm sẽ nhận được WebSocket event `NEW_CONVERSATION` chứa thông tin đầy đủ của conversation.
+
+**WebSocket Notification** (gửi tới `/topic/conversation/{conversationId}`):
+```json
+{
+  "type": "MEMBER_ADDED",
+  "conversationId": 123,
+  "memberId": 12,
+  "userId": 6,
+  "fullName": "New Member",
+  "avatar": "url...",
+  "role": "MEMBER"
+}
+```
 
 ---
 
@@ -668,6 +683,15 @@ Conversation updated successfully
 }
 ```
 
+**WebSocket Notification** (gửi tới `/topic/conversation/{conversationId}`):
+```json
+{
+  "type": "MEMBER_REMOVED",
+  "conversationId": 123,
+  "userId": 5
+}
+```
+
 ---
 
 ### 5. Lấy Danh Sách Conversation Của User Hiện Tại (Và Gợi Ý)
@@ -691,8 +715,7 @@ Conversation updated successfully
       "isPrivate": false,
       "createdAt": 1705312200000,
       "totalMembers": 5,
-      "isJoined": true,
-      "unseenCount": 0
+      "isJoined": true
     },
     {
       "id": 99,
@@ -701,17 +724,11 @@ Conversation updated successfully
       "isPrivate": false,
       "createdAt": 1705312900000,
       "totalMembers": 150,
-      "isJoined": false,
-      "unseenCount": 5
+      "isJoined": false
     }
   ]
 }
 ```
-
-**Conversation Response Fields**:
-| Field | Type | Description |
-|-------|------|--------------| 
-| `unseenCount` | Integer | Số tin nhắn chưa đọc (null hoặc 0 = không có tin chưa đọc) |
 
 ---
 
@@ -764,6 +781,17 @@ Conversation updated successfully
 Member role set successfully
 ```
 
+**WebSocket Notification** (gửi tới `/topic/conversation/{conversationId}`):
+```json
+{
+  "type": "MEMBER_ROLE_UPDATED",
+  "conversationId": 123,
+  "memberId": 10,
+  "userId": 5,
+  "role": "ADMIN"
+}
+```
+
 ---
 
 ### 8. Lấy Chi Tiết Conversation
@@ -814,7 +842,7 @@ Member role set successfully
 **Endpoint**: `POST /conversations/read`  
 **Authorization**: Bearer Token (phải là thành viên của cuộc trò chuyện)
 
-**Mô tả**: Cập nhật tin nhắn đã đọc cuối cùng cho user trong conversation. Dùng để tracking số tin nhắn chưa đọc (`unseenCount`).
+**Mô tả**: Cập nhật tin nhắn đã đọc cuối cùng cho user trong conversation. Dùng để tracking số tin nhắn chưa đọc (`unreadCount`).
 
 **Request Body**:
 ```json
@@ -862,7 +890,7 @@ Member role set successfully
 ```
 
 **Lưu ý**:
-- Gọi endpoint này khi user mở conversation hoặc khi nhận tin nhắn mới
+- Gọi endpoint này khi user mở conversation hoặc scroll đến tin nhắn mới nhất
 - `messageId` nên là ID của tin nhắn mới nhất mà user đã nhìn thấy
 - Sau khi gọi, `unseenCount` trong `GET /conversations/user/me` sẽ được cập nhật
 
@@ -1434,6 +1462,22 @@ stompClient.connect(
 }
 ```
 
+**WebSocket Notification** (gửi tới `/topic/conversation/{conversationId}`):
+```json
+{
+  "id": 123,
+  "content": "Message content",
+  "status": "SENT",
+  "createdAt": 1705312200000,
+  "updatedAt": null,
+  "conversationId": 1,
+  "senderId": 5,
+  "senderName": "Nguyen Van A",
+  "senderAvatar": "https://...",
+  "isPinned": false
+}
+```
+
 ---
 
 ### 5. Unpin Tin Nhắn
@@ -1444,6 +1488,22 @@ stompClient.connect(
 ```json
 {
   "messageId": 123
+}
+```
+
+**WebSocket Notification** (gửi tới `/topic/conversation/{conversationId}`):
+```json
+{
+  "id": 123,
+  "content": "Message content",
+  "status": "SENT",
+  "createdAt": 1705312200000,
+  "updatedAt": null,
+  "conversationId": 1,
+  "senderId": 5,
+  "senderName": "Nguyen Van A",
+  "senderAvatar": "https://...",
+  "isPinned": false
 }
 ```
 
@@ -1489,7 +1549,29 @@ stompClient.connect(
 
 ---
 
-### 8. Trạng Thái Người Dùng (User Status)
+
+---
+
+### 8. Thêm Thành Viên (Member Added)
+
+**Trigger**: Khi admin thêm thành viên vào conversation.
+
+**WebSocket Notification** (gửi tới `/topic/conversation/{conversationId}`):
+```json
+{
+  "type": "MEMBER_ADDED",
+  "conversationId": 123,
+  "memberId": 12,
+  "userId": 6,
+  "fullName": "New Member",
+  "avatar": "url...",
+  "role": "MEMBER"
+}
+```
+
+---
+
+### 9. Trạng Thái Người Dùng (User Status)
 
 **Trigger**: Tự động khi user kết nối (connect) hoặc ngắt kết nối (disconnect) WebSocket.  
 Hệ thống sẽ gửi notification tới tất cả các conversation mà user đó đang tham gia.
@@ -1503,6 +1585,72 @@ Hệ thống sẽ gửi notification tới tất cả các conversation mà user
 }
 ```
 *Status values*: `ONLINE`, `OFFLINE`
+
+---
+
+### 10. Cập Nhật Role Thành Viên (Member Role Update)
+
+**Trigger**: Khi admin thay đổi role của thành viên trong conversation.
+
+**WebSocket Notification** (gửi tới `/topic/conversation/{conversationId}`):
+```json
+{
+  "type": "MEMBER_ROLE_UPDATED",
+  "conversationId": 123,
+  "memberId": 10,
+  "userId": 5,
+  "role": "ADMIN"
+}
+```
+
+---
+
+### 11. Xóa Thành Viên (Member Removed)
+
+**Trigger**: Khi admin xóa thành viên khỏi conversation.
+
+**WebSocket Notification** (gửi tới `/topic/conversation/{conversationId}`):
+```json
+{
+  "type": "MEMBER_REMOVED",
+  "conversationId": 123,
+  "userId": 5
+}
+```
+
+---
+
+### 12. Được Thêm Vào Conversation (New Conversation)
+
+**Trigger**: Khi user được thêm vào một conversation mới (do tạo mới hoặc được admin thêm vào).
+**Destination**: `/user/queue/notifications`
+
+**WebSocket Notification**:
+```json
+{
+  "type": "NEW_CONVERSATION",
+  "data": {
+    "id": 1,
+    "name": "general",
+    "type": "CHANNEL",
+    "isPrivate": false,
+    "createdAt": 1705312200000,
+    "totalMembers": 5,
+    "isJoined": true,
+    "unseenCount": 0,
+    "members": [
+      {
+        "userId": 2,
+        "conversationMemberId": 10,
+        "fullName": "Nguyen Van A",
+        "avatar": "https://example.com/avatar.jpg",
+        "role": "ADMIN"
+      },
+      // ...
+    ]
+  }
+}
+```
 
 ---
 

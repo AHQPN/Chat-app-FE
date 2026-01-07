@@ -103,6 +103,7 @@ class WebSocketService {
             // First subscription to this topic
             info = { listeners: new Map() };
             this.subscriptions.set(topic, info);
+            console.log(`%c[WS] NEW Subscription: ${topic}`, 'color: #4CAF50; font-weight: bold;');
 
             // Subscribe to STOMP if connected
             if (this.client.connected) {
@@ -120,8 +121,11 @@ class WebSocketService {
             }
         }
 
-        // Add or update listener
-        console.log(`[WS] Subscribe: topic=${topic}, listenerId=${listenerId}`);
+        // Add or update listener (silent if already exists with same callback)
+        const existingListener = info.listeners.get(listenerId);
+        if (!existingListener) {
+            console.log(`[WS] Add listener: topic=${topic}, listenerId=${listenerId}`);
+        }
         info.listeners.set(listenerId, { callback });
     }
 

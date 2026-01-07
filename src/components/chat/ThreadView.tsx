@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { X, Send, Paperclip, Smile, Loader2, Reply } from 'lucide-react';
 import { messageService } from '@/services/messageService';
+import { conversationService } from '@/services/conversationService';
 import { MessageItem } from './MessageItem'; // Reusing component
 import type { Message } from '@/types';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -64,6 +65,14 @@ export function ThreadView({
                         new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
                     );
                     setReplies(sortedReplies);
+
+                    // Mark the last reply (or root message) as read
+                    const lastMessageId = sortedReplies.length > 0
+                        ? sortedReplies[sortedReplies.length - 1].id
+                        : rootMessage.id;
+                    conversationService.setReadMessage(rootMessage.conversationId, lastMessageId).catch(err => {
+                        console.error('Failed to mark thread messages as read:', err);
+                    });
                 }
             } catch (error) {
                 console.error('Failed to fetch thread replies:', error);
@@ -73,7 +82,7 @@ export function ThreadView({
         };
 
         fetchReplies();
-    }, [rootMessage.id]);
+    }, [rootMessage.id, rootMessage.conversationId]);
 
     // Handle updates (reactions, etc.)
     useEffect(() => {
